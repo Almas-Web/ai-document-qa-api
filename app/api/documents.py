@@ -4,6 +4,7 @@ import shutil
 
 from app.services.pdf_service import extract_text_from_pdf
 from app.services.chunk_service import chunk_text
+from app.services.embedding_service import generate_embedding
 
 router = APIRouter(prefix="/documents", tags=["Documents"])
 
@@ -22,9 +23,13 @@ def upload_document(file: UploadFile = File(...)):
 
     chunks = chunk_text(text)
 
+    embeddings = [generate_embedding(chunk) for chunk in chunks]
+
     return {
         "filename": file.filename,
         "text_length": len(text),
         "chunk_count": len(chunks),
-        "chunks": chunks[:3]
+        "first_chunk": chunks[0],
+        "embedding_dimension": len(embeddings[0]),
+        "first_embedding": embeddings[0]
     }
