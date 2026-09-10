@@ -42,9 +42,10 @@ def get_current_user(token: str, db: Session) -> User:
         user_id = payload.get("sub")
         if user_id is None:
             raise ValueError("Invalid token")
-    except (JWTError, ValueError):
+        user_id = int(user_id)
+    except (JWTError, ValueError, TypeError):
         raise ValueError("Invalid or expired token")
-    user = db.query(User).filter(User.id == int(user_id)).first()
+    user = db.query(User).filter(User.id == user_id).first()
     if user is None:
         raise ValueError("User not found")
     return user

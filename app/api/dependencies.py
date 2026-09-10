@@ -1,7 +1,6 @@
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
-
 from app.db.dependencies import get_db
 from app.core.security import get_current_user
 from app.models.user import User
