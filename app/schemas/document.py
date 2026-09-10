@@ -1,3 +1,4 @@
+from datetime import datetime
 from pydantic import BaseModel
 
 class DocumentResponse(BaseModel):
@@ -5,3 +6,7 @@ class DocumentResponse(BaseModel):
     filename: str
     text_length: int
     chunk_count: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True

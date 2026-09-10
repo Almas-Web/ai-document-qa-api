@@ -3,9 +3,11 @@ from pathlib import Path
 import shutil
 from sqlalchemy.orm import Session
 from app.schemas.qa import QuestionRequest, AnswerResponse
+from app.schemas.document import DocumentResponse
 from app.db.dependencies import get_db
 from app.api.dependencies import get_authenticated_user
 from app.models.document import Document
+from app.models.chunk import Chunk
 from app.models.user import User
 from app.services.pdf_service import extract_text_from_pdf
 from app.services.chunk_service import chunk_text
@@ -84,4 +86,38 @@ def ask_question(
     return {
         "question": request.question,
         "answer": answer,
+    }
+
+@router.get("/", response_model=list[DocumentResponse])
+def get_documents(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_authenticated_user),
+):
+    documents = db.query(Document).filter(
+        Document.user_id == current_user.id
+    ).all()
+    return documents
+
+@router.delete("/{document_id}")
+def delete_document(
+    document_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_authenticated_user),
+):
+    document = db.query(Document).filter(
+        Document.id == document_id,
+        Document.user_id == current_user.id,
+    ).first()
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found.")
+    file_path = UPLOAD_DIR / document.filename
+    db.query(Chunk).filter(
+        Chunk.document_id == document.id
+    ).delete()
+    db.delete(document)
+    db.commit()
+    if file_path.exists():
+        file_path.unlink()
+    return {
+        "message": "Document deleted successfully."
     }

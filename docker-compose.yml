@@ -3,15 +3,12 @@ services:
     image: pgvector/pgvector:pg16
     container_name: ai_document_qa_db
     restart: unless-stopped
-
     environment:
       POSTGRES_DB: document_qa
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-
     ports:
       - "5445:5432"
-
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
