@@ -1,16 +1,10 @@
-import os
-
-from dotenv import load_dotenv
 from google import genai
 from google.genai import types
-
-
-load_dotenv()
+from app.core.config import settings
 
 client = genai.Client(
-    api_key=os.getenv("GEMINI_API_KEY")
+    api_key=settings.gemini_api_key
 )
-
 
 def generate_answer(question: str, context: str) -> str:
     prompt = f"""
@@ -29,7 +23,6 @@ If the answer is not available in the context, say:
 
 Answer:
 """
-
     response = client.models.generate_content(
         model="gemini-3.6-flash",
         contents=prompt,
@@ -37,5 +30,4 @@ Answer:
             temperature=0.2
         ),
     )
-
     return response.text

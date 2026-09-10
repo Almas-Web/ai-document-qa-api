@@ -1,6 +1,7 @@
 from fastapi import APIRouter, UploadFile, File, Depends, HTTPException
 from pathlib import Path
 import shutil
+import uuid
 from sqlalchemy.orm import Session
 from app.schemas.qa import QuestionRequest, AnswerResponse
 from app.schemas.document import DocumentResponse
@@ -19,6 +20,7 @@ from app.services.gemini_service import generate_answer
 router = APIRouter(prefix="/documents", tags=["Documents"])
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
+MAX_FILE_SIZE = 10 * 1024 * 1024
 
 @router.post("/upload")
 def upload_document(
@@ -30,31 +32,58 @@ def upload_document(
         raise HTTPException(status_code=400, detail="Filename is required.")
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are allowed.")
-    file_path = UPLOAD_DIR / file.filename
-    with file_path.open("wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-    text = extract_text_from_pdf(str(file_path))
-    if not text.strip():
-        raise HTTPException(status_code=400, detail="The uploaded PDF contains no readable text.")
-    chunks = chunk_text(text)
-    if not chunks:
-        raise HTTPException(status_code=400, detail="Could not create chunks from the document.")
-    embeddings = [generate_embedding(chunk) for chunk in chunks]
-    document = save_document(
-        db=db,
-        user_id=current_user.id,
-        filename=file.filename,
-        text=text,
-        chunks=chunks,
-        embeddings=embeddings,
-    )
-    return {
-        "id": document.id,
-        "filename": document.filename,
-        "text_length": document.text_length,
-        "chunk_count": document.chunk_count,
-        "embedding_dimension": len(embeddings[0]),
-    }
+    file_header = file.file.read(5)
+    file.file.seek(0)
+    if file_header != b"%PDF-":
+        raise HTTPException(status_code=400, detail="Invalid PDF file.")
+    file.file.seek(0, 2)
+    file_size = file.file.tell()
+    file.file.seek(0)
+    if file_size > MAX_FILE_SIZE:
+        raise HTTPException(status_code=413, detail="File size must not exceed 10 MB.")
+    original_filename = Path(file.filename).name
+    stored_filename = f"{uuid.uuid4().hex}_{original_filename}"
+    file_path = UPLOAD_DIR / stored_filename
+    try:
+        with file_path.open("wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        text = extract_text_from_pdf(str(file_path))
+        if not text.strip():
+            raise HTTPException(
+                status_code=400,
+                detail="The uploaded PDF contains no readable text.",
+            )
+        chunks = chunk_text(text)
+        if not chunks:
+            raise HTTPException(
+                status_code=400,
+                detail="Could not create chunks from the document.",
+            )
+        embeddings = [generate_embedding(chunk) for chunk in chunks]
+        document = save_document(
+            db=db,
+            user_id=current_user.id,
+            filename=stored_filename,
+            text=text,
+            chunks=chunks,
+            embeddings=embeddings,
+        )
+        return {
+            "id": document.id,
+            "filename": original_filename,
+            "text_length": document.text_length,
+            "chunk_count": document.chunk_count,
+            "embedding_dimension": len(embeddings[0]),
+        }
+    except HTTPException:
+        file_path.unlink(missing_ok=True)
+        raise
+    except Exception:
+        file_path.unlink(missing_ok=True)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to process the uploaded document.",
+        )
 
 @router.post("/ask", response_model=AnswerResponse)
 def ask_question(
@@ -77,7 +106,10 @@ def ask_question(
         top_k=3,
     )
     if not relevant_chunks:
-        raise HTTPException(status_code=404, detail="No relevant information found in the document.")
+        raise HTTPException(
+            status_code=404,
+            detail="No relevant information found in the document.",
+        )
     context = "\n\n".join(chunk.content for chunk in relevant_chunks)
     answer = generate_answer(
         question=request.question,
